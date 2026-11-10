@@ -14,13 +14,165 @@ export type Database = {
   }
   public: {
     Tables: {
-      [_ in never]: never
+      admins: {
+        Row: {
+          created_at: string
+          email: string
+          id: string
+          role: string
+        }
+        Insert: {
+          created_at?: string
+          email: string
+          id: string
+          role?: string
+        }
+        Update: {
+          created_at?: string
+          email?: string
+          id?: string
+          role?: string
+        }
+        Relationships: []
+      }
+      gift_cards: {
+        Row: {
+          created_at: string
+          current_balance: number
+          id: string
+          initial_amount: number
+          serial_number: string
+          status: string
+          voucher_code: string
+        }
+        Insert: {
+          created_at?: string
+          current_balance: number
+          id?: string
+          initial_amount: number
+          serial_number: string
+          status?: string
+          voucher_code: string
+        }
+        Update: {
+          created_at?: string
+          current_balance?: number
+          id?: string
+          initial_amount?: number
+          serial_number?: string
+          status?: string
+          voucher_code?: string
+        }
+        Relationships: []
+      }
+      transactions: {
+        Row: {
+          amount: number
+          created_at: string
+          description: string | null
+          gift_card_id: string
+          id: string
+          new_balance: number
+          previous_balance: number
+          transaction_reference: string
+          transaction_type: string
+        }
+        Insert: {
+          amount: number
+          created_at?: string
+          description?: string | null
+          gift_card_id: string
+          id?: string
+          new_balance: number
+          previous_balance: number
+          transaction_reference: string
+          transaction_type: string
+        }
+        Update: {
+          amount?: number
+          created_at?: string
+          description?: string | null
+          gift_card_id?: string
+          id?: string
+          new_balance?: number
+          previous_balance?: number
+          transaction_reference?: string
+          transaction_type?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "transactions_gift_card_id_fkey"
+            columns: ["gift_card_id"]
+            isOneToOne: false
+            referencedRelation: "gift_cards"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
     }
     Views: {
       [_ in never]: never
     }
     Functions: {
-      [_ in never]: never
+      adjust_gift_card_balance: {
+        Args: { p_adjustment: string; p_amount: number; p_card_id: string }
+        Returns: {
+          created_at: string
+          current_balance: number
+          id: string
+          initial_amount: number
+          serial_number: string
+          status: string
+          voucher_code: string
+        }
+        SetofOptions: {
+          from: "*"
+          to: "gift_cards"
+          isOneToOne: true
+          isSetofReturn: false
+        }
+      }
+      create_gift_card: {
+        Args: {
+          p_amount: number
+          p_serial_number: string
+          p_voucher_code: string
+        }
+        Returns: {
+          created_at: string
+          current_balance: number
+          id: string
+          initial_amount: number
+          serial_number: string
+          status: string
+          voucher_code: string
+        }
+        SetofOptions: {
+          from: "*"
+          to: "gift_cards"
+          isOneToOne: true
+          isSetofReturn: false
+        }
+      }
+      is_gift_card_admin: { Args: never; Returns: boolean }
+      set_gift_card_status: {
+        Args: { p_active: boolean; p_card_id: string }
+        Returns: {
+          created_at: string
+          current_balance: number
+          id: string
+          initial_amount: number
+          serial_number: string
+          status: string
+          voucher_code: string
+        }
+        SetofOptions: {
+          from: "*"
+          to: "gift_cards"
+          isOneToOne: true
+          isSetofReturn: false
+        }
+      }
     }
     Enums: {
       [_ in never]: never
