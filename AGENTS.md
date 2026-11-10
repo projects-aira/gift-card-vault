@@ -28,3 +28,7 @@ use the editor.
   own key and store it in Secrets.
 - **Secrets.** Lovable manages them. Do not put secret values in the repo.
 <!-- LOVABLE:END -->
+
+# Project Architecture
+
+- Keep the gift-card app limited to three public data tables (`admins`, `gift_cards`, `transactions`); use database functions for every write so ledger and balance updates are atomic and admin-gated.
