@@ -154,6 +154,7 @@ export type Database = {
           isSetofReturn: false
         }
       }
+      get_gift_card_dashboard_stats: { Args: never; Returns: Json }
       is_gift_card_admin: { Args: never; Returns: boolean }
       set_gift_card_status: {
         Args: { p_active: boolean; p_card_id: string }

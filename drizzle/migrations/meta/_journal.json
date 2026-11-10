@@ -8,6 +8,13 @@
       "when": 1794347868543,
       "tag": "0000_gift_card_admin_core",
       "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "7",
+      "when": 1794347932053,
+      "tag": "0001_gift_card_admin_security",
+      "breakpoints": true
     }
   ]
 }
