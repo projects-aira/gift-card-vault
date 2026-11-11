@@ -34,8 +34,8 @@ const SKYMART_LOGO_SRC = "/skymart-logo.png";
 
 function SkymartLogo({ className, imgClassName }: { className?: string; imgClassName?: string }) {
   return (
-    <div className={cn("inline-flex items-center justify-center overflow-hidden rounded-md bg-black", className)}>
-      <img src={SKYMART_LOGO_SRC} alt="Skymart" className={cn("h-8 w-auto max-w-full object-contain object-left", imgClassName)} />
+    <div className={cn("inline-flex items-center justify-center", className)}>
+      <img src={SKYMART_LOGO_SRC} alt="Skymart" className={cn("h-12 w-auto max-w-full object-contain object-left", imgClassName)} />
     </div>
   );
 }
@@ -147,7 +147,7 @@ function AuthScreen({ mode, setMode, onAuthenticated }: { mode: AuthMode; setMod
       <section className="relative flex min-h-[40vh] flex-col justify-between overflow-hidden bg-primary px-7 py-8 text-primary-foreground sm:px-12 lg:min-h-screen lg:px-16 lg:py-12">
         <div className="absolute inset-0 dashboard-grid opacity-50" />
         <div className="relative flex items-center gap-3">
-          <SkymartLogo className="px-2.5 py-1.5 ring-1 ring-primary-foreground/20" imgClassName="h-9" />
+          <SkymartLogo imgClassName="h-14 sm:h-16" />
           <span className="ml-auto rounded-full border border-primary-foreground/25 px-3 py-1 text-xs">ADMIN PORTAL</span>
         </div>
         <div className="relative max-w-lg py-10">
@@ -258,7 +258,7 @@ export function GiftCardAdmin() {
     const row = { serialNumber: singleForm.serialNumber.trim(), voucherCode: singleForm.voucherCode.trim(), amount: numericAmount };
     const { error } = await supabase.rpc("create_gift_card", { p_serial_number: row.serialNumber, p_voucher_code: row.voucherCode, p_amount: row.amount });
     if (error) toast.error(getErrorMessage(error, "Could not add this card."));
-    else { toast.success("Gift card added and initial credit recorded."); setSingleForm({ serialNumber: "", voucherCode: "", amount: "" }); setModal(null); await loadData(); }
+    else { toast.success("Gift card added as inactive. Activate it before use."); setSingleForm({ serialNumber: "", voucherCode: "", amount: "" }); setModal(null); await loadData(); }
     setFormBusy(false);
   }
 
@@ -289,7 +289,7 @@ export function GiftCardAdmin() {
       if (error) { failure = getErrorMessage(error, `Upload stopped at serial number ${row.serialNumber}.`); break; }
       imported += 1;
     }
-    if (imported > 0) { toast.success(`${imported} ${imported === 1 ? "card" : "cards"} imported with an initial transaction each.`); await loadData(); }
+    if (imported > 0) { toast.success(`${imported} ${imported === 1 ? "card" : "cards"} imported as inactive. Activate each card before use.`); await loadData(); }
     if (failure) toast.error(`${failure}${imported ? ` ${imported} preceding rows were saved.` : " No cards were saved."}`);
     else { setUploadDrafts([]); setUploadFileName(""); setBulkValue(""); setModal(null); }
     setFormBusy(false);
@@ -333,9 +333,13 @@ export function GiftCardAdmin() {
   }
 
   async function changeCardStatus(card: CardRow, active: boolean) {
-    const { error } = await supabase.rpc("set_gift_card_status", { p_card_id: card.id, p_active: active });
+    const { data, error } = await supabase.rpc("set_gift_card_status", { p_card_id: card.id, p_active: active });
     if (error) toast.error(getErrorMessage(error, "Could not change the card status."));
-    else { toast.success(active ? "Card activated." : "Card deactivated."); await loadData(); }
+    else {
+      toast.success(active ? "Card activated." : "Card deactivated.");
+      if (data) setSelectedCard(data as CardRow);
+      await loadData();
+    }
   }
 
   async function changePassword(event: React.FormEvent<HTMLFormElement>) {
@@ -362,7 +366,7 @@ export function GiftCardAdmin() {
 
   if (!auth.ready) return (
     <div className="flex min-h-screen flex-col items-center justify-center gap-5 bg-background">
-      <SkymartLogo className="px-3 py-2 shadow-sm" imgClassName="h-10" />
+      <SkymartLogo imgClassName="h-16" />
       <div className="flex items-center gap-3 text-muted-foreground"><span className="size-4 animate-spin rounded-full border-2 border-primary border-t-transparent" />Preparing your secure workspace…</div>
     </div>
   );
@@ -370,7 +374,7 @@ export function GiftCardAdmin() {
   if (!isAdmin) return (
     <main className="flex min-h-screen items-center justify-center bg-background px-5">
       <div className="max-w-md text-center">
-        <SkymartLogo className="mx-auto mb-5 px-3 py-2 shadow-sm" imgClassName="h-10" />
+        <SkymartLogo className="mx-auto mb-5" imgClassName="h-16" />
         <div className="mx-auto mb-5 flex size-14 items-center justify-center rounded-md bg-destructive/10 text-destructive"><ShieldCheck className="size-7" /></div>
         <h1 className="font-display text-2xl font-semibold">Admin access required</h1>
         <p className="mt-2 text-sm leading-6 text-muted-foreground">This account does not have permission to manage gift cards. Contact the workspace owner if you believe this is an error.</p>
@@ -383,10 +387,10 @@ export function GiftCardAdmin() {
     <div className="min-h-screen bg-background text-foreground">
       {mobileNavOpen && <Button variant="ghost" size="icon" aria-label="Close menu" className="fixed inset-y-0 right-0 z-40 h-full w-[calc(100%-17rem)] rounded-none bg-foreground/20 backdrop-blur-[1px] lg:hidden" onClick={() => setMobileNavOpen(false)}><X className="sr-only" /></Button>}
       <aside className={cn("fixed inset-y-0 left-0 z-50 flex w-[272px] -translate-x-full flex-col border-r bg-sidebar transition-transform duration-200 lg:translate-x-0", mobileNavOpen && "translate-x-0")}>
-        <div className="flex h-[72px] items-center justify-between border-b px-6">
+        <div className="flex min-h-[88px] items-center justify-between gap-2 border-b px-5 py-3">
           <div className="min-w-0 flex-1">
-            <SkymartLogo className="px-2 py-1" imgClassName="h-8 max-w-[168px]" />
-            <div className="mt-1 px-1 text-[10px] font-medium uppercase tracking-wide text-muted-foreground">Gift card operations</div>
+            <SkymartLogo imgClassName="h-14 max-w-[230px]" />
+            <div className="mt-1 px-0.5 text-[10px] font-medium uppercase tracking-wide text-muted-foreground">Gift card operations</div>
           </div>
           <Button variant="ghost" size="icon" aria-label="Close menu" className="lg:hidden" onClick={() => setMobileNavOpen(false)}><X /></Button>
         </div>
@@ -414,7 +418,7 @@ export function GiftCardAdmin() {
 
       <Dialog open={modal !== null} onOpenChange={(open) => { if (!open && !formBusy) { setModal(null); resetBulkUpload(); } }}>
         <DialogContent className="max-h-[88vh] overflow-y-auto sm:max-w-lg">
-          {modal === "single" && <><DialogHeader><div className="mb-2 flex size-10 items-center justify-center rounded-md bg-accent text-primary"><CreditCard className="size-5" /></div><DialogTitle>Add a gift card</DialogTitle><DialogDescription>Enter the card details. An initial-credit record is created automatically.</DialogDescription></DialogHeader><form className="space-y-4" onSubmit={saveSingleCard}><div className="space-y-2"><Label htmlFor="new-serial">Serial number</Label><Input id="new-serial" value={singleForm.serialNumber} onChange={(event) => setSingleForm({ ...singleForm, serialNumber: event.target.value })} placeholder="e.g. GC-2025-001" required maxLength={100} /></div><div className="space-y-2"><Label htmlFor="new-voucher">Voucher code</Label><Input id="new-voucher" value={singleForm.voucherCode} onChange={(event) => setSingleForm({ ...singleForm, voucherCode: event.target.value })} placeholder="Enter unique voucher code" required maxLength={200} autoComplete="off" /></div><div className="space-y-2"><Label htmlFor="new-amount">Initial amount (₦)</Label><Input id="new-amount" type="number" min="0.01" step="0.01" inputMode="decimal" value={singleForm.amount} onChange={(event) => setSingleForm({ ...singleForm, amount: event.target.value })} placeholder="0.00" required /></div><DialogFooter className="pt-3"><Button type="button" variant="outline" onClick={() => setModal(null)}>Cancel</Button><Button type="submit" disabled={formBusy}>{formBusy ? "Saving…" : "Add card"}<Plus className="size-4" /></Button></DialogFooter></form></>}
+          {modal === "single" && <><DialogHeader><div className="mb-2 flex size-10 items-center justify-center rounded-md bg-accent text-primary"><CreditCard className="size-5" /></div><DialogTitle>Add a gift card</DialogTitle><DialogDescription>Enter the card details. New cards start inactive — activate them before they can be used.</DialogDescription></DialogHeader><form className="space-y-4" onSubmit={saveSingleCard}><div className="space-y-2"><Label htmlFor="new-serial">Serial number</Label><Input id="new-serial" value={singleForm.serialNumber} onChange={(event) => setSingleForm({ ...singleForm, serialNumber: event.target.value })} placeholder="e.g. GC-2025-001" required maxLength={100} /></div><div className="space-y-2"><Label htmlFor="new-voucher">Voucher code</Label><Input id="new-voucher" value={singleForm.voucherCode} onChange={(event) => setSingleForm({ ...singleForm, voucherCode: event.target.value })} placeholder="Enter unique voucher code" required maxLength={200} autoComplete="off" /></div><div className="space-y-2"><Label htmlFor="new-amount">Initial amount (₦)</Label><Input id="new-amount" type="number" min="0.01" step="0.01" inputMode="decimal" value={singleForm.amount} onChange={(event) => setSingleForm({ ...singleForm, amount: event.target.value })} placeholder="0.00" required /></div><DialogFooter className="pt-3"><Button type="button" variant="outline" onClick={() => setModal(null)}>Cancel</Button><Button type="submit" disabled={formBusy}>{formBusy ? "Saving…" : "Add card"}<Plus className="size-4" /></Button></DialogFooter></form></>}
           {modal === "bulk" && <>
             <DialogHeader>
               <div className="mb-2 flex size-10 items-center justify-center rounded-md bg-accent text-primary"><FileUp className="size-5" /></div>
@@ -486,7 +490,7 @@ export function GiftCardAdmin() {
 
       <Dialog open={selectedCard !== null && modal === null} onOpenChange={(open) => { if (!open) setSelectedCard(null); }}>
         <DialogContent className="max-h-[88vh] overflow-y-auto sm:max-w-xl">
-          {selectedCard && <><DialogHeader><div className="mb-2 flex size-10 items-center justify-center rounded-md bg-accent text-primary"><CreditCard className="size-5" /></div><div className="flex items-center gap-2"><DialogTitle>Card details</DialogTitle><StatusBadge status={selectedCard.status} /></div><DialogDescription>Review this card and manage its balance or availability.</DialogDescription></DialogHeader><div className="space-y-4"><div className="grid gap-3 sm:grid-cols-2"><DetailBox label="Serial number" value={selectedCard.serial_number} /><DetailBox label="Voucher code" value={showVouchers ? selectedCard.voucher_code : maskVoucherCode(selectedCard.voucher_code)} action={<Button variant="ghost" size="icon" aria-label={showVouchers ? "Hide voucher code" : "Reveal voucher code"} onClick={() => setShowVouchers(!showVouchers)}>{showVouchers ? <EyeOff /> : <Eye />}</Button>} /><DetailBox label="Initial amount" value={formatNaira(selectedCard.initial_amount)} /><DetailBox label="Current balance" value={formatNaira(selectedCard.current_balance)} /></div><DetailBox label="Date created" value={new Date(selectedCard.created_at).toLocaleString("en-NG", { dateStyle: "medium", timeStyle: "short" })} /><div className="flex flex-col gap-2 border-t pt-4 sm:flex-row sm:flex-wrap"><Button onClick={() => openAdjustment(selectedCard, "add")}><TrendingUp className="size-4" /> Add money</Button><Button variant="outline" onClick={() => openAdjustment(selectedCard, "deduct")} disabled={selectedCard.status !== "active"}><TrendingDown className="size-4" /> Deduct</Button><div className="flex items-center gap-2 sm:ml-auto"><Switch id="card-active" checked={selectedCard.status === "active"} disabled={selectedCard.status === "depleted"} onCheckedChange={(checked) => void changeCardStatus(selectedCard, checked)} /><Label htmlFor="card-active" className="text-xs text-muted-foreground">{selectedCard.status === "depleted" ? "Depleted" : selectedCard.status === "active" ? "Active" : "Inactive"}</Label></div></div></div></>}
+          {selectedCard && <><DialogHeader><div className="mb-2 flex size-10 items-center justify-center rounded-md bg-accent text-primary"><CreditCard className="size-5" /></div><div className="flex items-center gap-2"><DialogTitle>Card details</DialogTitle><StatusBadge status={selectedCard.status} /></div><DialogDescription>{selectedCard.status === "inactive" ? "This card is inactive. Activate it before deductions are allowed." : "Review this card and manage its balance or availability."}</DialogDescription></DialogHeader><div className="space-y-4"><div className="grid gap-3 sm:grid-cols-2"><DetailBox label="Serial number" value={selectedCard.serial_number} /><DetailBox label="Voucher code" value={showVouchers ? selectedCard.voucher_code : maskVoucherCode(selectedCard.voucher_code)} action={<Button variant="ghost" size="icon" aria-label={showVouchers ? "Hide voucher code" : "Reveal voucher code"} onClick={() => setShowVouchers(!showVouchers)}>{showVouchers ? <EyeOff /> : <Eye />}</Button>} /><DetailBox label="Initial amount" value={formatNaira(selectedCard.initial_amount)} /><DetailBox label="Current balance" value={formatNaira(selectedCard.current_balance)} /></div><DetailBox label="Date created" value={new Date(selectedCard.created_at).toLocaleString("en-NG", { dateStyle: "medium", timeStyle: "short" })} /><div className="flex flex-col gap-2 border-t pt-4 sm:flex-row sm:flex-wrap"><Button onClick={() => openAdjustment(selectedCard, "add")}><TrendingUp className="size-4" /> Add money</Button><Button variant="outline" onClick={() => openAdjustment(selectedCard, "deduct")} disabled={selectedCard.status !== "active"}><TrendingDown className="size-4" /> Deduct</Button><div className="flex items-center gap-2 sm:ml-auto"><Switch id="card-active" checked={selectedCard.status === "active"} disabled={selectedCard.status === "depleted" || selectedCard.current_balance <= 0} onCheckedChange={(checked) => void changeCardStatus(selectedCard, checked)} /><Label htmlFor="card-active" className="text-xs text-muted-foreground">{selectedCard.status === "depleted" ? "Depleted" : selectedCard.status === "active" ? "Active" : "Activate card"}</Label></div></div></div></>}
         </DialogContent>
       </Dialog>
     </div>
