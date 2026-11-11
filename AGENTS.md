@@ -32,3 +32,5 @@ use the editor.
 # Project Architecture
 
 - Keep the gift-card app limited to three public data tables (`admins`, `gift_cards`, `transactions`); use database functions for every write so ledger and balance updates are atomic and admin-gated.
+- Keep authentication email/password-only with public registration disabled; the first administrator is authorized by the selected email in a database auth lifecycle trigger.
+- Keep all screens on the existing TanStack Start route system, share global design tokens in `src/styles.css`, and use client-side Supabase calls with RLS plus security-definer database operations for app data.
