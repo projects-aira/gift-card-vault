@@ -1,8 +1,22 @@
+import XLSX from "xlsx";
+
 export type CsvCardRow = {
   serialNumber: string;
   voucherCode: string;
   amount: number;
 };
+
+export type GiftCardDraftRow = {
+  serialNumber: string;
+  voucherCode: string;
+  amount: number | null;
+};
+
+const MAX_BULK_ROWS = 500;
+const MAX_UPLOAD_BYTES = 5_000_000;
+const SERIAL_HEADERS = ["serialnumber", "serial", "serialno"];
+const VOUCHER_HEADERS = ["vouchercode", "voucher", "code"];
+const AMOUNT_HEADERS = ["amount", "initialamount", "value", "cardvalue"];
 
 export function formatNaira(value: number) {
   return new Intl.NumberFormat("en-NG", {
@@ -16,6 +30,28 @@ export function formatNaira(value: number) {
 export function maskVoucherCode(value: string) {
   if (value.length <= 4) return "•".repeat(value.length);
   return `${"•".repeat(Math.min(value.length - 4, 12))}${value.slice(-4)}`;
+}
+
+export function isValidCardAmount(amount: number) {
+  return Number.isFinite(amount) && amount > 0 && Math.round(amount * 100) === amount * 100;
+}
+
+export function getGiftCardUploadExtension(fileName: string) {
+  const lower = fileName.toLowerCase();
+  if (lower.endsWith(".csv")) return "csv" as const;
+  if (lower.endsWith(".xlsx")) return "xlsx" as const;
+  return null;
+}
+
+export function assertGiftCardUploadFile(file: File) {
+  const kind = getGiftCardUploadExtension(file.name);
+  if (!kind) throw new Error("Choose a .csv or .xlsx file.");
+  if (file.size > MAX_UPLOAD_BYTES) throw new Error("Choose a file no larger than 5 MB.");
+  return kind;
+}
+
+function normalizeHeader(header: string) {
+  return header.toLowerCase().replace(/[ _-]/g, "");
 }
 
 function parseCsvLine(line: string) {
@@ -41,40 +77,104 @@ function parseCsvLine(line: string) {
   return cells;
 }
 
-export function parseGiftCardCsv(text: string): CsvCardRow[] {
-  const lines = text.replace(/^\uFEFF/, "").split(/\r?\n/).filter((line) => line.trim());
-  if (lines.length < 2) throw new Error("Add a header row and at least one card.");
-  const headers = parseCsvLine(lines[0] ?? "").map((header) => header.toLowerCase().replace(/[ _-]/g, ""));
-  const serialIndex = headers.findIndex((header) => ["serialnumber", "serial", "serialno"].includes(header));
-  const voucherIndex = headers.findIndex((header) => ["vouchercode", "voucher", "code"].includes(header));
-  const amountIndex = headers.findIndex((header) => ["amount", "initialamount", "value"].includes(header));
-  if (serialIndex < 0 || voucherIndex < 0 || amountIndex < 0) {
-    throw new Error("CSV headers must include serial number, voucher code, and amount.");
+function cellToString(value: unknown) {
+  if (value == null) return "";
+  if (typeof value === "string") return value.trim();
+  if (typeof value === "number" && Number.isFinite(value)) return String(value);
+  if (typeof value === "boolean") return value ? "true" : "false";
+  return String(value).trim();
+}
+
+function parseAmountCell(raw: string, rowLabel: string) {
+  if (!raw) return null;
+  const amount = Number(raw.replace(/,/g, ""));
+  if (!isValidCardAmount(amount)) {
+    throw new Error(`${rowLabel} needs a positive amount with no more than two decimal places.`);
   }
+  return amount;
+}
+
+export function parseGiftCardTable(headers: string[], bodyRows: unknown[][]): GiftCardDraftRow[] {
+  if (bodyRows.length < 1) throw new Error("Add a header row and at least one card.");
+  const normalized = headers.map((header) => normalizeHeader(cellToString(header)));
+  const serialIndex = normalized.findIndex((header) => SERIAL_HEADERS.includes(header));
+  const voucherIndex = normalized.findIndex((header) => VOUCHER_HEADERS.includes(header));
+  const amountIndex = normalized.findIndex((header) => AMOUNT_HEADERS.includes(header));
+  if (serialIndex < 0 || voucherIndex < 0) {
+    throw new Error("File headers must include serial number and voucher code.");
+  }
+
   const serials = new Set<string>();
   const vouchers = new Set<string>();
-  const rows = lines.slice(1).map((line, index) => {
-    const cells = parseCsvLine(line);
-    const serialNumber = (cells[serialIndex] ?? "").trim();
-    const voucherCode = (cells[voucherIndex] ?? "").trim();
-    const amount = Number(cells[amountIndex]);
+  const rows = bodyRows.map((row, index) => {
+    const cells = row.map((cell) => cellToString(cell));
+    const serialNumber = cells[serialIndex] ?? "";
+    const voucherCode = cells[voucherIndex] ?? "";
+    const rowLabel = `Row ${index + 2}`;
     if (!serialNumber || serialNumber.length > 100 || !voucherCode || voucherCode.length > 200) {
-      throw new Error(`Row ${index + 2} needs a serial number and voucher code within the allowed length.`);
+      throw new Error(`${rowLabel} needs a serial number and voucher code within the allowed length.`);
     }
-    if (!Number.isFinite(amount) || amount <= 0 || Math.round(amount * 100) !== amount * 100) {
-      throw new Error(`Row ${index + 2} needs a positive amount with no more than two decimal places.`);
-    }
+    const amount = amountIndex >= 0 ? parseAmountCell(cells[amountIndex] ?? "", rowLabel) : null;
     const serialKey = serialNumber.toLowerCase();
     const voucherKey = voucherCode.toLowerCase();
     if (serials.has(serialKey) || vouchers.has(voucherKey)) {
-      throw new Error(`Row ${index + 2} repeats a serial number or voucher code from this file.`);
+      throw new Error(`${rowLabel} repeats a serial number or voucher code from this file.`);
     }
     serials.add(serialKey);
     vouchers.add(voucherKey);
     return { serialNumber, voucherCode, amount };
   });
-  if (rows.length > 500) throw new Error("A bulk upload can contain up to 500 cards.");
+
+  if (rows.length > MAX_BULK_ROWS) throw new Error("A bulk upload can contain up to 500 cards.");
   return rows;
+}
+
+export function parseGiftCardCsv(text: string): GiftCardDraftRow[] {
+  const lines = text.replace(/^\uFEFF/, "").split(/\r?\n/).filter((line) => line.trim());
+  if (lines.length < 2) throw new Error("Add a header row and at least one card.");
+  const headers = parseCsvLine(lines[0] ?? "");
+  const bodyRows = lines.slice(1).map((line) => parseCsvLine(line));
+  return parseGiftCardTable(headers, bodyRows);
+}
+
+export function parseGiftCardXlsx(data: ArrayBuffer | Uint8Array): GiftCardDraftRow[] {
+  const workbook = XLSX.read(data, { type: "array", cellDates: false });
+  const sheetName = workbook.SheetNames[0];
+  if (!sheetName) throw new Error("The Excel file does not contain a worksheet.");
+  const sheet = workbook.Sheets[sheetName];
+  if (!sheet) throw new Error("The Excel file does not contain a worksheet.");
+  const matrix = XLSX.utils.sheet_to_json<(string | number | boolean | null)[]>(sheet, {
+    header: 1,
+    blankrows: false,
+    defval: "",
+    raw: false,
+  });
+  const nonEmpty = matrix.filter((row) => row.some((cell) => cellToString(cell) !== ""));
+  if (nonEmpty.length < 2) throw new Error("Add a header row and at least one card.");
+  const [headerRow, ...bodyRows] = nonEmpty;
+  return parseGiftCardTable((headerRow ?? []).map((cell) => cellToString(cell)), bodyRows);
+}
+
+export function finalizeGiftCardRows(drafts: GiftCardDraftRow[], amountOverride?: number | null): CsvCardRow[] {
+  if (!drafts.length) throw new Error("Add at least one card before importing.");
+  const hasOverride = typeof amountOverride === "number";
+  if (hasOverride && !isValidCardAmount(amountOverride)) {
+    throw new Error("Enter a positive card value with up to two decimal places.");
+  }
+  if (!hasOverride && drafts.some((row) => row.amount == null)) {
+    throw new Error("Set a card value, or include an amount column in the file.");
+  }
+  return drafts.map((row) => ({
+    serialNumber: row.serialNumber,
+    voucherCode: row.voucherCode,
+    amount: hasOverride ? amountOverride : (row.amount as number),
+  }));
+}
+
+export async function parseGiftCardUploadFile(file: File): Promise<GiftCardDraftRow[]> {
+  const kind = assertGiftCardUploadFile(file);
+  if (kind === "csv") return parseGiftCardCsv(await file.text());
+  return parseGiftCardXlsx(await file.arrayBuffer());
 }
 
 export function getAuthErrorMessage(message: string) {

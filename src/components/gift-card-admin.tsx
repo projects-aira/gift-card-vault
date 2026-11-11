@@ -3,7 +3,16 @@ import { Link } from "@tanstack/react-router";
 import { toast } from "sonner";
 import { supabase } from "@/integrations/supabase/client";
 import type { Database, Tables } from "@/integrations/supabase/types";
-import { formatNaira, getAuthErrorMessage, maskVoucherCode, parseGiftCardCsv, type CsvCardRow } from "@/lib/gift-card.utils";
+import {
+  finalizeGiftCardRows,
+  formatNaira,
+  getAuthErrorMessage,
+  isValidCardAmount,
+  maskVoucherCode,
+  parseGiftCardUploadFile,
+  type CsvCardRow,
+  type GiftCardDraftRow,
+} from "@/lib/gift-card.utils";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -15,11 +24,21 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Switch } from "@/components/ui/switch";
 import {
   ArrowDownLeft, ArrowLeft, ArrowRight, ArrowUpRight, BarChart3, Bell, Check, ChevronDown,
-  CircleHelp, CreditCard, Download, Eye, EyeOff, FileUp, Fingerprint, Gift, LayoutDashboard,
+  CircleHelp, CreditCard, Download, Eye, EyeOff, FileUp, Fingerprint, LayoutDashboard,
   LockKeyhole, LogOut, Menu, MoreHorizontal, Plus, Search, Settings2, ShieldCheck, Sparkles,
   TrendingDown, TrendingUp, WalletCards, X,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
+
+const SKYMART_LOGO_SRC = "/skymart-logo.png";
+
+function SkymartLogo({ className, imgClassName }: { className?: string; imgClassName?: string }) {
+  return (
+    <div className={cn("inline-flex items-center justify-center overflow-hidden rounded-md bg-black", className)}>
+      <img src={SKYMART_LOGO_SRC} alt="Skymart" className={cn("h-8 w-auto max-w-full object-contain object-left", imgClassName)} />
+    </div>
+  );
+}
 
 type CardRow = Tables<"gift_cards">;
 type TransactionRow = Tables<"transactions">;
@@ -128,8 +147,7 @@ function AuthScreen({ mode, setMode, onAuthenticated }: { mode: AuthMode; setMod
       <section className="relative flex min-h-[40vh] flex-col justify-between overflow-hidden bg-primary px-7 py-8 text-primary-foreground sm:px-12 lg:min-h-screen lg:px-16 lg:py-12">
         <div className="absolute inset-0 dashboard-grid opacity-50" />
         <div className="relative flex items-center gap-3">
-          <span className="flex size-10 items-center justify-center rounded-md bg-primary-foreground/15 ring-1 ring-primary-foreground/25"><Gift className="size-5" /></span>
-          <span className="font-display text-lg font-semibold">Voucher Desk</span>
+          <SkymartLogo className="px-2.5 py-1.5 ring-1 ring-primary-foreground/20" imgClassName="h-9" />
           <span className="ml-auto rounded-full border border-primary-foreground/25 px-3 py-1 text-xs">ADMIN PORTAL</span>
         </div>
         <div className="relative max-w-lg py-10">
@@ -157,7 +175,7 @@ function AuthScreen({ mode, setMode, onAuthenticated }: { mode: AuthMode; setMod
           </form>
           {mode !== "signin" && <Button variant="link" className="mt-4 px-0" onClick={() => setMode("signin")}><ArrowLeft className="size-4" /> Back to sign in</Button>}
           <div className="mt-8 flex items-start gap-3 border-t pt-5 text-xs leading-5 text-muted-foreground"><LockKeyhole className="mt-0.5 size-4 shrink-0 text-primary" /><span>Registration is disabled. Admin accounts are provisioned by the workspace owner.</span></div>
-          <p className="mt-7 text-center text-[11px] text-muted-foreground">Voucher Desk · Secure workspace</p>
+          <p className="mt-7 text-center text-[11px] text-muted-foreground">Skymart · Secure gift card workspace</p>
         </div>
       </section>
     </main>
@@ -181,8 +199,9 @@ export function GiftCardAdmin() {
   const [showVouchers, setShowVouchers] = useState(false);
   const [singleForm, setSingleForm] = useState({ serialNumber: "", voucherCode: "", amount: "" });
   const [amount, setAmount] = useState("");
-  const [csvRows, setCsvRows] = useState<CsvCardRow[]>([]);
-  const [csvFile, setCsvFile] = useState("");
+  const [uploadDrafts, setUploadDrafts] = useState<GiftCardDraftRow[]>([]);
+  const [uploadFileName, setUploadFileName] = useState("");
+  const [bulkValue, setBulkValue] = useState("");
   const [passwordForm, setPasswordForm] = useState({ currentPassword: "", newPassword: "" });
 
   async function loadData() {
@@ -243,29 +262,48 @@ export function GiftCardAdmin() {
     setFormBusy(false);
   }
 
+  function resolveBulkRows(): CsvCardRow[] | null {
+    const trimmed = bulkValue.trim();
+    const override = trimmed === "" ? null : Number(trimmed);
+    if (trimmed !== "" && !isValidCardAmount(override as number)) {
+      toast.error("Enter a positive card value with up to two decimal places.");
+      return null;
+    }
+    try {
+      return finalizeGiftCardRows(uploadDrafts, override);
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Could not prepare those cards for import.");
+      return null;
+    }
+  }
+
   async function saveBulkCards() {
-    if (!csvRows.length) return;
+    if (!uploadDrafts.length) return;
+    const rows = resolveBulkRows();
+    if (!rows) return;
     setFormBusy(true);
     let imported = 0;
     let failure = "";
-    for (const row of csvRows) {
+    for (const row of rows) {
       const { error } = await supabase.rpc("create_gift_card", { p_serial_number: row.serialNumber, p_voucher_code: row.voucherCode, p_amount: row.amount });
       if (error) { failure = getErrorMessage(error, `Upload stopped at serial number ${row.serialNumber}.`); break; }
       imported += 1;
     }
     if (imported > 0) { toast.success(`${imported} ${imported === 1 ? "card" : "cards"} imported with an initial transaction each.`); await loadData(); }
     if (failure) toast.error(`${failure}${imported ? ` ${imported} preceding rows were saved.` : " No cards were saved."}`);
-    else { setCsvRows([]); setCsvFile(""); setModal(null); }
+    else { setUploadDrafts([]); setUploadFileName(""); setBulkValue(""); setModal(null); }
     setFormBusy(false);
   }
 
-  function readCsvFile(file: File | undefined) {
+  function readUploadFile(file: File | undefined) {
     if (!file) return;
-    if (!file.name.toLowerCase().endsWith(".csv") || file.size > 2_000_000) { toast.error("Choose a CSV file no larger than 2 MB."); return; }
-    void file.text().then((text) => {
-      try { setCsvRows(parseGiftCardCsv(text)); setCsvFile(file.name); }
-      catch (error) { toast.error(error instanceof Error ? error.message : "Could not read that CSV file."); }
-    }).catch(() => toast.error("Could not read that CSV file."));
+    void parseGiftCardUploadFile(file)
+      .then((drafts) => {
+        setUploadDrafts(drafts);
+        setUploadFileName(file.name);
+        toast.success(`${drafts.length} ${drafts.length === 1 ? "card" : "cards"} ready to import.`);
+      })
+      .catch((error) => toast.error(error instanceof Error ? error.message : "Could not read that file."));
   }
 
   function downloadCsvTemplate() {
@@ -273,6 +311,12 @@ export function GiftCardAdmin() {
     const url = URL.createObjectURL(new Blob([csv], { type: "text/csv;charset=utf-8" }));
     const anchor = document.createElement("a");
     anchor.href = url; anchor.download = "gift-card-upload-template.csv"; anchor.click(); URL.revokeObjectURL(url);
+  }
+
+  function resetBulkUpload() {
+    setUploadDrafts([]);
+    setUploadFileName("");
+    setBulkValue("");
   }
 
   async function adjustBalance(event: React.FormEvent<HTMLFormElement>) {
@@ -316,11 +360,22 @@ export function GiftCardAdmin() {
   const recentTransactions = transactions.slice(0, 6);
   const title = screen === "gift-cards" ? "Gift cards" : screen === "transactions" ? "Transactions" : screen === "settings" ? "Settings" : "Dashboard";
 
-  if (!auth.ready) return <div className="flex min-h-screen items-center justify-center bg-background"><div className="flex items-center gap-3 text-muted-foreground"><span className="size-4 animate-spin rounded-full border-2 border-primary border-t-transparent" />Preparing your secure workspace…</div></div>;
+  if (!auth.ready) return (
+    <div className="flex min-h-screen flex-col items-center justify-center gap-5 bg-background">
+      <SkymartLogo className="px-3 py-2 shadow-sm" imgClassName="h-10" />
+      <div className="flex items-center gap-3 text-muted-foreground"><span className="size-4 animate-spin rounded-full border-2 border-primary border-t-transparent" />Preparing your secure workspace…</div>
+    </div>
+  );
   if (!auth.email) return <AuthScreen mode={auth.mode} setMode={auth.setMode} onAuthenticated={auth.setEmail} />;
   if (!isAdmin) return (
     <main className="flex min-h-screen items-center justify-center bg-background px-5">
-      <div className="max-w-md text-center"><div className="mx-auto mb-5 flex size-14 items-center justify-center rounded-md bg-destructive/10 text-destructive"><ShieldCheck className="size-7" /></div><h1 className="font-display text-2xl font-semibold">Admin access required</h1><p className="mt-2 text-sm leading-6 text-muted-foreground">This account does not have permission to manage gift cards. Contact the workspace owner if you believe this is an error.</p><Button className="mt-6" variant="outline" onClick={handleSignOut}><LogOut className="size-4" /> Sign out</Button></div>
+      <div className="max-w-md text-center">
+        <SkymartLogo className="mx-auto mb-5 px-3 py-2 shadow-sm" imgClassName="h-10" />
+        <div className="mx-auto mb-5 flex size-14 items-center justify-center rounded-md bg-destructive/10 text-destructive"><ShieldCheck className="size-7" /></div>
+        <h1 className="font-display text-2xl font-semibold">Admin access required</h1>
+        <p className="mt-2 text-sm leading-6 text-muted-foreground">This account does not have permission to manage gift cards. Contact the workspace owner if you believe this is an error.</p>
+        <Button className="mt-6" variant="outline" onClick={handleSignOut}><LogOut className="size-4" /> Sign out</Button>
+      </div>
     </main>
   );
 
@@ -329,7 +384,10 @@ export function GiftCardAdmin() {
       {mobileNavOpen && <Button variant="ghost" size="icon" aria-label="Close menu" className="fixed inset-y-0 right-0 z-40 h-full w-[calc(100%-17rem)] rounded-none bg-foreground/20 backdrop-blur-[1px] lg:hidden" onClick={() => setMobileNavOpen(false)}><X className="sr-only" /></Button>}
       <aside className={cn("fixed inset-y-0 left-0 z-50 flex w-[272px] -translate-x-full flex-col border-r bg-sidebar transition-transform duration-200 lg:translate-x-0", mobileNavOpen && "translate-x-0")}>
         <div className="flex h-[72px] items-center justify-between border-b px-6">
-          <div className="flex items-center gap-3"><span className="flex size-9 items-center justify-center rounded-md bg-primary text-primary-foreground"><Gift className="size-[18px]" /></span><div><div className="font-display text-[16px] font-semibold">Voucher Desk</div><div className="text-[10px] text-muted-foreground">CARD OPERATIONS</div></div></div>
+          <div className="min-w-0 flex-1">
+            <SkymartLogo className="px-2 py-1" imgClassName="h-8 max-w-[168px]" />
+            <div className="mt-1 px-1 text-[10px] font-medium uppercase tracking-wide text-muted-foreground">Gift card operations</div>
+          </div>
           <Button variant="ghost" size="icon" aria-label="Close menu" className="lg:hidden" onClick={() => setMobileNavOpen(false)}><X /></Button>
         </div>
         <div className="px-4 pt-6"><p className="px-3 text-[10px] font-semibold uppercase text-muted-foreground">Workspace</p><nav aria-label="Main navigation" className="mt-3 space-y-1">{NAV_ITEMS.map(({ id, label, icon: Icon }) => <Button key={id} variant="ghost" onClick={() => goTo(id)} aria-current={screen === id ? "page" : undefined} className={cn("h-10 w-full justify-start gap-3 rounded-md px-3 text-sm font-medium text-sidebar-foreground", screen === id && "bg-sidebar-accent text-sidebar-accent-foreground") }><Icon className={cn("size-[17px]", screen === id ? "text-primary" : "text-muted-foreground")} />{label}{id === "gift-cards" && cards.length > 0 && <span className="ml-auto rounded-full bg-sidebar-accent px-2 py-0.5 text-[10px] text-muted-foreground">{stats.total_cards}</span>}</Button>)}</nav></div>
@@ -346,18 +404,82 @@ export function GiftCardAdmin() {
 
         <main className="mx-auto max-w-[1450px] px-4 py-6 sm:px-7 sm:py-8 lg:px-9">
           {screen === "dashboard" && <DashboardScreen stats={stats} cards={recentCards} transactions={recentTransactions} showVouchers={showVouchers} onToggleVouchers={setShowVouchers} onNavigate={goTo} onSelectCard={setSelectedCard} />}
-          {screen === "gift-cards" && <CardsScreen cards={filteredCards} search={searchTerm} setSearch={setSearchTerm} status={statusFilter} setStatus={setStatusFilter} sort={sort} setSort={setSort} showVouchers={showVouchers} setShowVouchers={setShowVouchers} onAdd={() => setModal("single")} onBulk={() => setModal("bulk")} onSelect={setSelectedCard} />}
+          {screen === "gift-cards" && <CardsScreen cards={filteredCards} search={searchTerm} setSearch={setSearchTerm} status={statusFilter} setStatus={setStatusFilter} sort={sort} setSort={setSort} showVouchers={showVouchers} setShowVouchers={setShowVouchers} onAdd={() => setModal("single")} onBulk={() => { resetBulkUpload(); setModal("bulk"); }} onSelect={setSelectedCard} />}
           {screen === "transactions" && <TransactionsScreen cards={cards} transactions={transactions} />}
           {screen === "settings" && <SettingsScreen email={auth.email ?? ""} busy={formBusy} passwordForm={passwordForm} setPasswordForm={setPasswordForm} onChangePassword={changePassword} onSignOut={handleSignOut} />}
         </main>
 
-        {screen !== "settings" && <footer className="mx-4 flex flex-col gap-2 border-t px-1 py-5 text-[11px] text-muted-foreground sm:mx-7 sm:flex-row sm:items-center sm:justify-between lg:mx-9"><span>Voucher Desk · Gift card operations</span><span>All amounts in Nigerian naira (₦)</span></footer>}
+        {screen !== "settings" && <footer className="mx-4 flex flex-col gap-2 border-t px-1 py-5 text-[11px] text-muted-foreground sm:mx-7 sm:flex-row sm:items-center sm:justify-between lg:mx-9"><span>Skymart · Gift card operations</span><span>All amounts in Nigerian naira (₦)</span></footer>}
       </div>
 
-      <Dialog open={modal !== null} onOpenChange={(open) => { if (!open && !formBusy) { setModal(null); setCsvRows([]); setCsvFile(""); } }}>
+      <Dialog open={modal !== null} onOpenChange={(open) => { if (!open && !formBusy) { setModal(null); resetBulkUpload(); } }}>
         <DialogContent className="max-h-[88vh] overflow-y-auto sm:max-w-lg">
           {modal === "single" && <><DialogHeader><div className="mb-2 flex size-10 items-center justify-center rounded-md bg-accent text-primary"><CreditCard className="size-5" /></div><DialogTitle>Add a gift card</DialogTitle><DialogDescription>Enter the card details. An initial-credit record is created automatically.</DialogDescription></DialogHeader><form className="space-y-4" onSubmit={saveSingleCard}><div className="space-y-2"><Label htmlFor="new-serial">Serial number</Label><Input id="new-serial" value={singleForm.serialNumber} onChange={(event) => setSingleForm({ ...singleForm, serialNumber: event.target.value })} placeholder="e.g. GC-2025-001" required maxLength={100} /></div><div className="space-y-2"><Label htmlFor="new-voucher">Voucher code</Label><Input id="new-voucher" value={singleForm.voucherCode} onChange={(event) => setSingleForm({ ...singleForm, voucherCode: event.target.value })} placeholder="Enter unique voucher code" required maxLength={200} autoComplete="off" /></div><div className="space-y-2"><Label htmlFor="new-amount">Initial amount (₦)</Label><Input id="new-amount" type="number" min="0.01" step="0.01" inputMode="decimal" value={singleForm.amount} onChange={(event) => setSingleForm({ ...singleForm, amount: event.target.value })} placeholder="0.00" required /></div><DialogFooter className="pt-3"><Button type="button" variant="outline" onClick={() => setModal(null)}>Cancel</Button><Button type="submit" disabled={formBusy}>{formBusy ? "Saving…" : "Add card"}<Plus className="size-4" /></Button></DialogFooter></form></>}
-          {modal === "bulk" && <><DialogHeader><div className="mb-2 flex size-10 items-center justify-center rounded-md bg-accent text-primary"><FileUp className="size-5" /></div><DialogTitle>Upload cards from CSV</DialogTitle><DialogDescription>Use a CSV header row with serial number, voucher code and amount.</DialogDescription></DialogHeader><div className="space-y-4"><div className="flex flex-wrap items-center justify-between gap-2 rounded-md border p-3"><div className="min-w-0"><p className="text-sm font-medium">CSV template</p><p className="text-xs text-muted-foreground">Download the sample columns.</p></div><Button type="button" variant="outline" size="sm" onClick={downloadCsvTemplate}><Download className="size-4" /> Download</Button></div><label htmlFor="gift-card-csv" className="flex cursor-pointer flex-col items-center justify-center rounded-md border border-dashed bg-muted/30 px-4 py-8 text-center transition-colors hover:border-primary/50"><span className="mb-3 flex size-11 items-center justify-center rounded-md bg-background text-primary"><FileUp className="size-5" /></span><span className="text-sm font-medium">{csvFile || "Choose a CSV file"}</span><span className="mt-1 text-xs text-muted-foreground">Maximum 500 rows · 2 MB</span><input id="gift-card-csv" className="sr-only" type="file" accept=".csv,text/csv" onChange={(event) => readCsvFile(event.target.files?.[0])} /></label>{csvRows.length > 0 && <div className="rounded-md border p-3"><div className="flex items-center justify-between"><p className="text-sm font-medium">{csvRows.length} cards ready</p><Badge variant="secondary"><Check className="mr-1 size-3" />Validated</Badge></div><p className="mt-1 truncate text-xs text-muted-foreground">{csvRows.slice(0, 2).map((row) => row.serialNumber).join(", ")}{csvRows.length > 2 ? `, +${csvRows.length - 2} more` : ""}</p></div>}<DialogFooter><Button type="button" variant="outline" onClick={() => setModal(null)}>Cancel</Button><Button type="button" disabled={formBusy || csvRows.length === 0} onClick={() => void saveBulkCards()}>{formBusy ? "Importing…" : `Import ${csvRows.length || ""} cards`}<ArrowRight className="size-4" /></Button></DialogFooter></div></>}
+          {modal === "bulk" && <>
+            <DialogHeader>
+              <div className="mb-2 flex size-10 items-center justify-center rounded-md bg-accent text-primary"><FileUp className="size-5" /></div>
+              <DialogTitle>Upload cards</DialogTitle>
+              <DialogDescription>Import a CSV or Excel (.xlsx) file with serial number and voucher code. Set a card value here, or include an amount column in the file.</DialogDescription>
+            </DialogHeader>
+            <div className="space-y-4">
+              <div className="flex flex-wrap items-center justify-between gap-2 rounded-md border p-3">
+                <div className="min-w-0">
+                  <p className="text-sm font-medium">CSV template</p>
+                  <p className="text-xs text-muted-foreground">serial number, voucher code, amount</p>
+                </div>
+                <Button type="button" variant="outline" size="sm" onClick={downloadCsvTemplate}><Download className="size-4" /> Download</Button>
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="bulk-card-value">Set card value (₦)</Label>
+                <Input
+                  id="bulk-card-value"
+                  type="number"
+                  min="0.01"
+                  step="0.01"
+                  inputMode="decimal"
+                  value={bulkValue}
+                  onChange={(event) => setBulkValue(event.target.value)}
+                  placeholder="e.g. 10000.00"
+                />
+                <p className="text-xs text-muted-foreground">
+                  {uploadDrafts.some((row) => row.amount == null)
+                    ? "Required when your file has no amount column. Applied to every card in this upload."
+                    : "Optional. Leave blank to keep amounts from the file, or enter a value to apply it to every card."}
+                </p>
+              </div>
+              <label htmlFor="gift-card-upload" className="flex cursor-pointer flex-col items-center justify-center rounded-md border border-dashed bg-muted/30 px-4 py-8 text-center transition-colors hover:border-primary/50">
+                <span className="mb-3 flex size-11 items-center justify-center rounded-md bg-background text-primary"><FileUp className="size-5" /></span>
+                <span className="text-sm font-medium">{uploadFileName || "Choose a CSV or Excel file"}</span>
+                <span className="mt-1 text-xs text-muted-foreground">.csv or .xlsx · Maximum 500 rows · 5 MB</span>
+                <input
+                  id="gift-card-upload"
+                  className="sr-only"
+                  type="file"
+                  accept=".csv,.xlsx,text/csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+                  onChange={(event) => readUploadFile(event.target.files?.[0])}
+                />
+              </label>
+              {uploadDrafts.length > 0 && (
+                <div className="rounded-md border p-3">
+                  <div className="flex items-center justify-between">
+                    <p className="text-sm font-medium">{uploadDrafts.length} cards ready</p>
+                    <Badge variant="secondary"><Check className="mr-1 size-3" />Validated</Badge>
+                  </div>
+                  <p className="mt-1 truncate text-xs text-muted-foreground">
+                    {uploadDrafts.slice(0, 2).map((row) => row.serialNumber).join(", ")}
+                    {uploadDrafts.length > 2 ? `, +${uploadDrafts.length - 2} more` : ""}
+                  </p>
+                </div>
+              )}
+              <DialogFooter>
+                <Button type="button" variant="outline" onClick={() => { setModal(null); resetBulkUpload(); }}>Cancel</Button>
+                <Button type="button" disabled={formBusy || uploadDrafts.length === 0} onClick={() => void saveBulkCards()}>
+                  {formBusy ? "Importing…" : `Import ${uploadDrafts.length || ""} cards`}
+                  <ArrowRight className="size-4" />
+                </Button>
+              </DialogFooter>
+            </div>
+          </>}
           {(modal === "add" || modal === "deduct") && selectedCard && <><DialogHeader><div className={cn("mb-2 flex size-10 items-center justify-center rounded-md", modal === "add" ? "bg-emerald-50 text-emerald-700" : "bg-rose-50 text-rose-700")}><WalletCards className="size-5" /></div><DialogTitle>{modal === "add" ? "Add money" : "Deduct money"}</DialogTitle><DialogDescription>Update the card balance and record this adjustment.</DialogDescription></DialogHeader><form className="space-y-4" onSubmit={adjustBalance}><div className="rounded-md border bg-muted/30 p-4"><p className="text-xs text-muted-foreground">CARD SERIAL NUMBER</p><p className="mt-1 font-medium">{selectedCard.serial_number}</p><div className="mt-4 flex items-center justify-between border-t pt-3"><span className="text-xs text-muted-foreground">Available balance</span><span className="font-display text-lg font-semibold">{formatNaira(selectedCard.current_balance)}</span></div></div><div className="space-y-2"><Label htmlFor="adjustment-amount">Amount (₦)</Label><Input id="adjustment-amount" type="number" min="0.01" max={modal === "deduct" ? selectedCard.current_balance : undefined} step="0.01" inputMode="decimal" value={amount} onChange={(event) => setAmount(event.target.value)} placeholder="0.00" required /></div><DialogFooter className="pt-3"><Button type="button" variant="outline" onClick={() => setModal(null)}>Cancel</Button><Button type="submit" disabled={formBusy || (modal === "deduct" && selectedCard.status !== "active")}>{formBusy ? "Saving…" : "Confirm"}{modal === "add" ? <TrendingUp className="size-4" /> : <TrendingDown className="size-4" />}</Button></DialogFooter></form></>}
         </DialogContent>
       </Dialog>

@@ -4,10 +4,10 @@ import { GiftCardAdmin } from "@/components/gift-card-admin";
 export const Route = createFileRoute("/")({
   head: () => ({
     meta: [
-      { title: "Voucher Desk | Gift Card Admin" },
-      { name: "description", content: "Manage gift cards, voucher balances, and transaction history." },
-      { property: "og:title", content: "Voucher Desk | Gift Card Admin" },
-      { property: "og:description", content: "A secure workspace for gift card and voucher management." },
+      { title: "Skymart | Gift Card Admin" },
+      { name: "description", content: "Manage Skymart gift cards, voucher balances, and transaction history." },
+      { property: "og:title", content: "Skymart | Gift Card Admin" },
+      { property: "og:description", content: "Skymart secure workspace for gift card and voucher management." },
       { property: "og:type", content: "website" },
       { name: "twitter:card", content: "summary_large_image" },
     ],
