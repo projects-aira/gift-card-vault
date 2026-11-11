@@ -24,7 +24,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Switch } from "@/components/ui/switch";
 import {
   ArrowDownLeft, ArrowLeft, ArrowRight, ArrowUpRight, BarChart3, Bell, Check, ChevronDown,
-  CircleHelp, CreditCard, Download, Eye, EyeOff, FileUp, Fingerprint, LayoutDashboard,
+  CircleHelp, CreditCard, Download, Eye, EyeOff, FileUp, LayoutDashboard,
   LockKeyhole, LogOut, Menu, MoreHorizontal, Plus, Search, Settings2, ShieldCheck, Sparkles,
   TrendingDown, TrendingUp, WalletCards, X,
 } from "lucide-react";
@@ -148,27 +148,28 @@ function AuthScreen({ mode, setMode, onAuthenticated }: { mode: AuthMode; setMod
   const isForgot = mode === "forgot";
   return (
     <main className="relative grid min-h-screen overflow-hidden bg-background lg:grid-cols-[minmax(0,1fr)_minmax(440px,0.88fr)]">
-      <section className="relative flex min-h-[40vh] flex-col justify-between overflow-hidden bg-primary px-7 py-8 text-primary-foreground sm:px-12 lg:min-h-screen lg:px-16 lg:py-12">
+      <section className="relative flex min-h-[42vh] flex-col justify-between overflow-hidden bg-primary px-7 py-8 text-primary-foreground sm:px-12 lg:min-h-screen lg:px-16 lg:py-12">
         <div className="absolute inset-0 dashboard-grid opacity-50" />
         <div className="relative flex items-center gap-3">
           <SkymartLogo imgClassName="h-20 sm:h-24" />
-          <span className="ml-auto rounded-full border border-primary-foreground/25 px-3 py-1 text-xs">ADMIN PORTAL</span>
+          <span className="ml-auto rounded-full border border-primary-foreground/25 px-3 py-1 text-xs tracking-wide">ADMIN PORTAL</span>
         </div>
-        <div className="relative max-w-lg py-10">
-          <div className="mb-5 inline-flex items-center gap-2 rounded-full border border-primary-foreground/25 px-3 py-1.5 text-xs"><ShieldCheck className="size-3.5" /> Your cards, clearly in view</div>
-          <h1 className="font-display text-4xl font-semibold leading-tight sm:text-5xl">Simple card control.<br />Clear balances.</h1>
-          <p className="mt-5 max-w-md text-sm leading-7 text-primary-foreground/75">A single workspace for managing gift cards, tracking voucher balances and reviewing every adjustment.</p>
-          <div className="mt-9 grid grid-cols-3 border-y border-primary-foreground/20 py-4">
-            <div><span className="block text-xs text-primary-foreground/60">CURRENCY</span><span className="mt-1 block text-sm font-medium">Nigerian naira</span></div>
-            <div><span className="block text-xs text-primary-foreground/60">ACCESS</span><span className="mt-1 block text-sm font-medium">Admin only</span></div>
-            <div><span className="block text-xs text-primary-foreground/60">RECORDS</span><span className="mt-1 block text-sm font-medium">Audit ready</span></div>
-          </div>
+        <div className="relative max-w-xl py-12 lg:py-16">
+          <h1 className="font-display text-[2.35rem] font-semibold leading-[1.12] tracking-tight sm:text-5xl sm:leading-[1.08]">
+            Manage your cards.<br />
+            Control every balance.
+          </h1>
+          <p className="mt-6 text-sm font-medium tracking-[0.08em] text-primary-foreground/85 sm:text-[15px]">
+            Simple<span className="mx-2.5 text-primary-foreground/35">·</span>Secure<span className="mx-2.5 text-primary-foreground/35">·</span>Organised
+          </p>
+          <p className="mt-5 max-w-md text-[15px] leading-7 text-primary-foreground/72">
+            A central place to manage gift cards, update balances and keep track of every transaction.
+          </p>
         </div>
-        <div className="relative flex items-center justify-between text-xs text-primary-foreground/65"><span>Voucher management, without the busywork.</span><span>01 / 04</span></div>
+        <div className="relative text-xs text-primary-foreground/55">Skymart gift card administration</div>
       </section>
-      <section className="flex min-h-[60vh] items-center justify-center px-6 py-12 sm:px-10 lg:min-h-screen lg:px-16">
+      <section className="flex min-h-[58vh] items-center justify-center px-6 py-12 sm:px-10 lg:min-h-screen lg:px-16">
         <div className="w-full max-w-[390px]">
-          <div className="mb-7 flex items-center gap-2 text-xs font-medium text-primary"><Fingerprint className="size-4" /> SECURE ADMIN SIGN-IN</div>
           <h2 className="font-display text-3xl font-semibold tracking-tight">{isReset ? "Set a new password" : isForgot ? "Reset your password" : "Welcome back"}</h2>
           <p className="mt-2 text-sm text-muted-foreground">{isReset ? "Choose a strong password for your administrator account." : isForgot ? "Enter the admin email and we’ll send a reset link." : "Sign in with your administrator account to continue."}</p>
           <form className="mt-8 space-y-5" onSubmit={isReset ? updatePassword : isForgot ? sendReset : signIn}>
