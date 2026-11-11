@@ -1,4 +1,4 @@
-import XLSX from "xlsx";
+import { read as readXlsx, utils as xlsxUtils } from "xlsx";
 
 export type CsvCardRow = {
   serialNumber: string;
@@ -138,12 +138,12 @@ export function parseGiftCardCsv(text: string): GiftCardDraftRow[] {
 }
 
 export function parseGiftCardXlsx(data: ArrayBuffer | Uint8Array): GiftCardDraftRow[] {
-  const workbook = XLSX.read(data, { type: "array", cellDates: false });
+  const workbook = readXlsx(data, { type: "array", cellDates: false });
   const sheetName = workbook.SheetNames[0];
   if (!sheetName) throw new Error("The Excel file does not contain a worksheet.");
   const sheet = workbook.Sheets[sheetName];
   if (!sheet) throw new Error("The Excel file does not contain a worksheet.");
-  const matrix = XLSX.utils.sheet_to_json<(string | number | boolean | null)[]>(sheet, {
+  const matrix = xlsxUtils.sheet_to_json<(string | number | boolean | null)[]>(sheet, {
     header: 1,
     blankrows: false,
     defval: "",

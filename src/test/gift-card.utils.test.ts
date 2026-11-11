@@ -1,6 +1,6 @@
 /** @vitest-environment node */
 import { describe, expect, it } from "vitest";
-import XLSX from "xlsx";
+import { utils as xlsxUtils, write as writeXlsx } from "xlsx";
 import {
   finalizeGiftCardRows,
   formatNaira,
@@ -60,13 +60,13 @@ describe("gift card helpers", () => {
   });
 
   it("parses Excel worksheets with serial, voucher, and amount columns", () => {
-    const sheet = XLSX.utils.aoa_to_sheet([
+    const sheet = xlsxUtils.aoa_to_sheet([
       ["Serial Number", "Voucher Code", "Amount"],
       ["X1", "EXCEL-01", 7500],
     ]);
-    const workbook = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(workbook, sheet, "Cards");
-    const base64 = XLSX.write(workbook, { type: "base64", bookType: "xlsx" }) as string;
+    const workbook = xlsxUtils.book_new();
+    xlsxUtils.book_append_sheet(workbook, sheet, "Cards");
+    const base64 = writeXlsx(workbook, { type: "base64", bookType: "xlsx" }) as string;
     const binary = atob(base64);
     const bytes = Uint8Array.from(binary, (character) => character.charCodeAt(0));
     expect(parseGiftCardXlsx(bytes)).toEqual([
