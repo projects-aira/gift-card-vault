@@ -21,7 +21,6 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Switch } from "@/components/ui/switch";
 import {
   ArrowDownLeft, ArrowLeft, ArrowRight, ArrowUpRight, BarChart3, Bell, Check, ChevronDown,
   CircleHelp, CreditCard, Download, Eye, EyeOff, FileUp, LayoutDashboard,
@@ -72,8 +71,20 @@ function getErrorMessage(error: { code?: string; message?: string } | null | und
   if (error.code === "42501") return "This account is not authorized to access the admin panel.";
   if (error.message?.includes("Deduction exceeds available balance")) return "This amount exceeds the card’s available balance.";
   if (error.message?.includes("Only active cards")) return "Only active cards can be charged.";
+  if (error.message?.includes("Activate only cards")) return "Activate only cards with a positive balance.";
   if (error.message?.includes("Not authorized")) return "This account is not authorized to manage gift cards.";
   return fallback;
+}
+
+function asCardRow(data: unknown): CardRow | null {
+  if (!data) return null;
+  if (Array.isArray(data)) return (data[0] as CardRow | undefined) ?? null;
+  if (typeof data === "object") return data as CardRow;
+  return null;
+}
+
+function cardBalance(card: Pick<CardRow, "current_balance">) {
+  return Number(card.current_balance);
 }
 
 function useAuth() {
@@ -190,6 +201,7 @@ function AuthScreen({ mode, setMode, onAuthenticated }: { mode: AuthMode; setMod
 export function GiftCardAdmin() {
   const auth = useAuth();
   const [isAdmin, setIsAdmin] = useState(false);
+  const [adminCheckReady, setAdminCheckReady] = useState(false);
   const [screen, setScreen] = useState<Screen>("dashboard");
   const [cards, setCards] = useState<CardRow[]>([]);
   const [transactions, setTransactions] = useState<TransactionRow[]>([]);
@@ -210,11 +222,34 @@ export function GiftCardAdmin() {
   const [passwordForm, setPasswordForm] = useState({ currentPassword: "", newPassword: "" });
 
   async function loadData() {
-    const user = await supabase.auth.getUser();
-    if (user.error || !user.data.user) { setIsAdmin(false); return; }
-    const { data: authorized, error: authError } = await supabase.rpc("is_gift_card_admin");
-    if (authError || !authorized) { setIsAdmin(false); return; }
+    setAdminCheckReady(false);
+    const sessionResult = await supabase.auth.getSession();
+    const session = sessionResult.data.session;
+    if (sessionResult.error || !session?.user) {
+      setIsAdmin(false);
+      setAdminCheckReady(true);
+      return;
+    }
+
+    let authorized = false;
+    let authError: { message?: string } | null = null;
+    for (let attempt = 0; attempt < 3; attempt += 1) {
+      const result = await supabase.rpc("is_gift_card_admin");
+      authError = result.error;
+      authorized = result.data === true;
+      if (!authError && authorized) break;
+      await new Promise((resolve) => setTimeout(resolve, 250 * (attempt + 1)));
+    }
+
+    if (authError || !authorized) {
+      setIsAdmin(false);
+      setAdminCheckReady(true);
+      toast.error(getErrorMessage(authError, "This account is not authorized to access the admin panel."));
+      return;
+    }
+
     setIsAdmin(true);
+    setAdminCheckReady(true);
     const [cardsResult, transactionsResult, statsResult] = await Promise.all([
       supabase.from("gift_cards").select("*").order("created_at", { ascending: false }).limit(1000),
       supabase.from("transactions").select("*").order("created_at", { ascending: false }).limit(1000),
@@ -229,7 +264,13 @@ export function GiftCardAdmin() {
   }
 
   useEffect(() => {
-    if (auth.email && auth.ready) void loadData();
+    if (!auth.ready) return;
+    if (!auth.email) {
+      setIsAdmin(false);
+      setAdminCheckReady(false);
+      return;
+    }
+    void loadData();
   }, [auth.email, auth.ready]);
 
   const activeCards = cards.filter((card) => card.status === "active").length;
@@ -247,6 +288,7 @@ export function GiftCardAdmin() {
   async function handleSignOut() {
     await supabase.auth.signOut();
     setIsAdmin(false);
+    setAdminCheckReady(false);
     setScreen("dashboard");
   }
 
@@ -338,13 +380,28 @@ export function GiftCardAdmin() {
   }
 
   async function changeCardStatus(card: CardRow, active: boolean) {
+    if (active && cardBalance(card) <= 0) {
+      toast.error("Activate only cards with a positive balance.");
+      return;
+    }
+    if (card.status === "depleted" && active) {
+      toast.error("Depleted cards need a balance top-up before activation.");
+      return;
+    }
+    setFormBusy(true);
+    const previous = card;
+    setSelectedCard({ ...card, status: active ? "active" : "inactive" });
     const { data, error } = await supabase.rpc("set_gift_card_status", { p_card_id: card.id, p_active: active });
-    if (error) toast.error(getErrorMessage(error, "Could not change the card status."));
-    else {
+    if (error) {
+      setSelectedCard(previous);
+      toast.error(getErrorMessage(error, "Could not change the card status."));
+    } else {
+      const updated = asCardRow(data);
+      if (updated) setSelectedCard(updated);
       toast.success(active ? "Card activated." : "Card deactivated.");
-      if (data) setSelectedCard(data as CardRow);
       await loadData();
     }
+    setFormBusy(false);
   }
 
   async function changePassword(event: React.FormEvent<HTMLFormElement>) {
@@ -369,7 +426,7 @@ export function GiftCardAdmin() {
   const recentTransactions = transactions.slice(0, 6);
   const title = screen === "gift-cards" ? "Gift cards" : screen === "transactions" ? "Transactions" : screen === "settings" ? "Settings" : "Dashboard";
 
-  if (!auth.ready) return (
+  if (!auth.ready || (auth.email && !adminCheckReady)) return (
     <div className="flex min-h-screen flex-col items-center justify-center gap-5 bg-background">
       <SkymartLogo imgClassName="h-24" />
       <div className="flex items-center gap-3 text-muted-foreground"><span className="size-4 animate-spin rounded-full border-2 border-primary border-t-transparent" />Preparing your secure workspace…</div>
@@ -382,8 +439,11 @@ export function GiftCardAdmin() {
         <SkymartLogo className="mx-auto mb-5" imgClassName="h-24" />
         <div className="mx-auto mb-5 flex size-14 items-center justify-center rounded-md bg-destructive/10 text-destructive"><ShieldCheck className="size-7" /></div>
         <h1 className="font-display text-2xl font-semibold">Admin access required</h1>
-        <p className="mt-2 text-sm leading-6 text-muted-foreground">This account does not have permission to manage gift cards. Contact the workspace owner if you believe this is an error.</p>
-        <Button className="mt-6" variant="outline" onClick={handleSignOut}><LogOut className="size-4" /> Sign out</Button>
+        <p className="mt-2 text-sm leading-6 text-muted-foreground">This account does not have permission to manage gift cards. Sign in as the authorized administrator, or retry the access check.</p>
+        <div className="mt-6 flex flex-wrap items-center justify-center gap-2">
+          <Button type="button" onClick={() => void loadData()}>Retry access check</Button>
+          <Button variant="outline" onClick={handleSignOut}><LogOut className="size-4" /> Sign out</Button>
+        </div>
       </div>
     </main>
   );
@@ -495,7 +555,43 @@ export function GiftCardAdmin() {
 
       <Dialog open={selectedCard !== null && modal === null} onOpenChange={(open) => { if (!open) setSelectedCard(null); }}>
         <DialogContent className="max-h-[88vh] overflow-y-auto sm:max-w-xl">
-          {selectedCard && <><DialogHeader><div className="mb-2 flex size-10 items-center justify-center rounded-md bg-accent text-primary"><CreditCard className="size-5" /></div><div className="flex items-center gap-2"><DialogTitle>Card details</DialogTitle><StatusBadge status={selectedCard.status} /></div><DialogDescription>{selectedCard.status === "inactive" ? "This card is inactive. Activate it before deductions are allowed." : "Review this card and manage its balance or availability."}</DialogDescription></DialogHeader><div className="space-y-4"><div className="grid gap-3 sm:grid-cols-2"><DetailBox label="Serial number" value={selectedCard.serial_number} /><DetailBox label="Voucher code" value={showVouchers ? selectedCard.voucher_code : maskVoucherCode(selectedCard.voucher_code)} action={<Button variant="ghost" size="icon" aria-label={showVouchers ? "Hide voucher code" : "Reveal voucher code"} onClick={() => setShowVouchers(!showVouchers)}>{showVouchers ? <EyeOff /> : <Eye />}</Button>} /><DetailBox label="Initial amount" value={formatNaira(selectedCard.initial_amount)} /><DetailBox label="Current balance" value={formatNaira(selectedCard.current_balance)} /></div><DetailBox label="Date created" value={new Date(selectedCard.created_at).toLocaleString("en-NG", { dateStyle: "medium", timeStyle: "short" })} /><div className="flex flex-col gap-2 border-t pt-4 sm:flex-row sm:flex-wrap"><Button onClick={() => openAdjustment(selectedCard, "add")}><TrendingUp className="size-4" /> Add money</Button><Button variant="outline" onClick={() => openAdjustment(selectedCard, "deduct")} disabled={selectedCard.status !== "active"}><TrendingDown className="size-4" /> Deduct</Button><div className="flex items-center gap-2 sm:ml-auto"><Switch id="card-active" checked={selectedCard.status === "active"} disabled={selectedCard.status === "depleted" || selectedCard.current_balance <= 0} onCheckedChange={(checked) => void changeCardStatus(selectedCard, checked)} /><Label htmlFor="card-active" className="text-xs text-muted-foreground">{selectedCard.status === "depleted" ? "Depleted" : selectedCard.status === "active" ? "Active" : "Activate card"}</Label></div></div></div></>}
+          {selectedCard && <>
+            <DialogHeader>
+              <div className="mb-2 flex size-10 items-center justify-center rounded-md bg-accent text-primary"><CreditCard className="size-5" /></div>
+              <div className="flex items-center gap-2"><DialogTitle>Card details</DialogTitle><StatusBadge status={selectedCard.status} /></div>
+              <DialogDescription>
+                {selectedCard.status === "inactive"
+                  ? "This card is inactive. Activate it before deductions are allowed."
+                  : "Review this card and manage its balance or availability."}
+              </DialogDescription>
+            </DialogHeader>
+            <div className="space-y-4">
+              <div className="grid gap-3 sm:grid-cols-2">
+                <DetailBox label="Serial number" value={selectedCard.serial_number} />
+                <DetailBox
+                  label="Voucher code"
+                  value={showVouchers ? selectedCard.voucher_code : maskVoucherCode(selectedCard.voucher_code)}
+                  action={<Button variant="ghost" size="icon" aria-label={showVouchers ? "Hide voucher code" : "Reveal voucher code"} onClick={() => setShowVouchers(!showVouchers)}>{showVouchers ? <EyeOff /> : <Eye />}</Button>}
+                />
+                <DetailBox label="Initial amount" value={formatNaira(selectedCard.initial_amount)} />
+                <DetailBox label="Current balance" value={formatNaira(selectedCard.current_balance)} />
+              </div>
+              <DetailBox label="Date created" value={new Date(selectedCard.created_at).toLocaleString("en-NG", { dateStyle: "medium", timeStyle: "short" })} />
+              <div className="flex flex-col gap-2 border-t pt-4 sm:flex-row sm:flex-wrap">
+                <Button onClick={() => openAdjustment(selectedCard, "add")}><TrendingUp className="size-4" /> Add money</Button>
+                <Button variant="outline" onClick={() => openAdjustment(selectedCard, "deduct")} disabled={selectedCard.status !== "active"}><TrendingDown className="size-4" /> Deduct</Button>
+                <Button
+                  type="button"
+                  className="sm:ml-auto"
+                  variant={selectedCard.status === "active" ? "outline" : "default"}
+                  disabled={formBusy || selectedCard.status === "depleted" || (selectedCard.status !== "active" && cardBalance(selectedCard) <= 0)}
+                  onClick={() => void changeCardStatus(selectedCard, selectedCard.status !== "active")}
+                >
+                  {formBusy ? "Updating…" : selectedCard.status === "depleted" ? "Depleted" : selectedCard.status === "active" ? "Deactivate card" : "Activate card"}
+                </Button>
+              </div>
+            </div>
+          </>}
         </DialogContent>
       </Dialog>
     </div>
