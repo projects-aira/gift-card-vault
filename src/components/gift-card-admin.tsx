@@ -30,12 +30,16 @@ import {
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
-const SKYMART_LOGO_SRC = "/skymart-logo.png";
+const SKYMART_LOGO_SRC = "/skymart-logo.png?v=2";
 
 function SkymartLogo({ className, imgClassName }: { className?: string; imgClassName?: string }) {
   return (
-    <div className={cn("inline-flex items-center justify-center", className)}>
-      <img src={SKYMART_LOGO_SRC} alt="Skymart" className={cn("h-12 w-auto max-w-full object-contain object-left", imgClassName)} />
+    <div className={cn("inline-flex items-center justify-center bg-transparent", className)}>
+      <img
+        src={SKYMART_LOGO_SRC}
+        alt="Skymart"
+        className={cn("h-16 w-auto max-w-full bg-transparent object-contain object-left", imgClassName)}
+      />
     </div>
   );
 }
@@ -147,7 +151,7 @@ function AuthScreen({ mode, setMode, onAuthenticated }: { mode: AuthMode; setMod
       <section className="relative flex min-h-[40vh] flex-col justify-between overflow-hidden bg-primary px-7 py-8 text-primary-foreground sm:px-12 lg:min-h-screen lg:px-16 lg:py-12">
         <div className="absolute inset-0 dashboard-grid opacity-50" />
         <div className="relative flex items-center gap-3">
-          <SkymartLogo imgClassName="h-14 sm:h-16" />
+          <SkymartLogo imgClassName="h-20 sm:h-24" />
           <span className="ml-auto rounded-full border border-primary-foreground/25 px-3 py-1 text-xs">ADMIN PORTAL</span>
         </div>
         <div className="relative max-w-lg py-10">
@@ -366,7 +370,7 @@ export function GiftCardAdmin() {
 
   if (!auth.ready) return (
     <div className="flex min-h-screen flex-col items-center justify-center gap-5 bg-background">
-      <SkymartLogo imgClassName="h-16" />
+      <SkymartLogo imgClassName="h-24" />
       <div className="flex items-center gap-3 text-muted-foreground"><span className="size-4 animate-spin rounded-full border-2 border-primary border-t-transparent" />Preparing your secure workspace…</div>
     </div>
   );
@@ -374,7 +378,7 @@ export function GiftCardAdmin() {
   if (!isAdmin) return (
     <main className="flex min-h-screen items-center justify-center bg-background px-5">
       <div className="max-w-md text-center">
-        <SkymartLogo className="mx-auto mb-5" imgClassName="h-16" />
+        <SkymartLogo className="mx-auto mb-5" imgClassName="h-24" />
         <div className="mx-auto mb-5 flex size-14 items-center justify-center rounded-md bg-destructive/10 text-destructive"><ShieldCheck className="size-7" /></div>
         <h1 className="font-display text-2xl font-semibold">Admin access required</h1>
         <p className="mt-2 text-sm leading-6 text-muted-foreground">This account does not have permission to manage gift cards. Contact the workspace owner if you believe this is an error.</p>
@@ -387,10 +391,10 @@ export function GiftCardAdmin() {
     <div className="min-h-screen bg-background text-foreground">
       {mobileNavOpen && <Button variant="ghost" size="icon" aria-label="Close menu" className="fixed inset-y-0 right-0 z-40 h-full w-[calc(100%-17rem)] rounded-none bg-foreground/20 backdrop-blur-[1px] lg:hidden" onClick={() => setMobileNavOpen(false)}><X className="sr-only" /></Button>}
       <aside className={cn("fixed inset-y-0 left-0 z-50 flex w-[272px] -translate-x-full flex-col border-r bg-sidebar transition-transform duration-200 lg:translate-x-0", mobileNavOpen && "translate-x-0")}>
-        <div className="flex min-h-[88px] items-center justify-between gap-2 border-b px-5 py-3">
+        <div className="flex min-h-[108px] items-center justify-between gap-2 border-b px-5 py-4">
           <div className="min-w-0 flex-1">
-            <SkymartLogo imgClassName="h-14 max-w-[230px]" />
-            <div className="mt-1 px-0.5 text-[10px] font-medium uppercase tracking-wide text-muted-foreground">Gift card operations</div>
+            <SkymartLogo imgClassName="h-[72px] max-w-[280px]" />
+            <div className="mt-1.5 px-0.5 text-[10px] font-medium uppercase tracking-wide text-muted-foreground">Gift card operations</div>
           </div>
           <Button variant="ghost" size="icon" aria-label="Close menu" className="lg:hidden" onClick={() => setMobileNavOpen(false)}><X /></Button>
         </div>
